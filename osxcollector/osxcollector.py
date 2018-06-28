@@ -17,6 +17,8 @@
 #  Non-fatal errors are only written to stderr when the --debug flag is passed to the script.
 #  They can also be found in the JSON output as lines with a key 'osxcollector_warn'
 
+__version__ = '1.10'
+
 ### IMPORTS
 import base64, calendar, os, shutil, struct, sys
 from argparse import ArgumentParser
@@ -38,33 +40,30 @@ import Foundation
 import macholib.MachO
 from xattr import getxattr
 
-__version__ = '1.10'
+### VARIABLES
+ROOT_PATH = '/'                                         # Global root path to build all further paths off of
+DEBUG_MODE = False                                      # Global debug mode flag for whether to enable breaking into pdb
+HomeDir = namedtuple('HomeDir', ['user_name', 'path'])  # A simple tuple for storing info about a user
+DATETIME_2001 = datetime(2001, 1, 1)                    # Constant to use for converting timestamps to strings
+DATETIME_1970 = datetime(1970, 1, 1)                    # Constant to use for converting timestamps to strings
+DATETIME_1601 = datetime(1601, 1, 1)                    # Constant to use for converting timestamps to strings
+MIN_YEAR = 2004
+ATTR_KMD_ITEM_WHERE_FROMS = 'com.apple.metadata:kMDItemWhereFroms'
+ATTR_QUARANTINE = 'com.apple.quarantine'
+PATH_ENVIRONMENT_NAME = "PATH"
 
-ROOT_PATH = '/'
-"""Global root path to build all further paths off of"""
-
-DEBUG_MODE = False
-"""Global debug mode flag for whether to enable breaking into pdb"""
-
-
+### FUNCTIONS
 def debugbreak():
     """Break in debugger if global DEBUG_MODE is set"""
     global DEBUG_MODE
-
     if DEBUG_MODE:
         import pdb
         pdb.set_trace()
 
-
-HomeDir = namedtuple('HomeDir', ['user_name', 'path'])
-"""A simple tuple for storing info about a user"""
-
 def _get_homedirs():
-    """Return a list of HomeDir objects
-    Takes care of filtering out '.'
+    """ Return a list of HomeDir objects - Takes care of filtering out '.'
     Returns:
-        list of HomeDir
-    """
+        list of HomeDir """
     homedirs = []
     users_dir_path = pathjoin(ROOT_PATH, 'Users')
     for user_name in listdir(users_dir_path):
@@ -73,37 +72,34 @@ def _get_homedirs():
     return homedirs
 
 def listdir(dir_path):
-    """Safe version of os.listdir will always return an enumerable value
+    """ Safe version of os.listdir will always return an enumerable value
     Takes care of filtering out known useless dot files.
     Args:
         dir_path: str path of directory to list
     Returns:
-        list of str
-    """
+        list of str """
     if not os.path.isdir(dir_path):
         return []
     ignored_files = ['.DS_Store', '.localized']
     return [val for val in os.listdir(dir_path) if val not in ignored_files]
 
 def _relative_path(path):
-    """Strips leading slash from a path.
+    """ Strips leading slash from a path.
     Args:
         path - a file path
     Returns:
-        string
-    """
+        string """
     if path.startswith('/'):
         return path[1:]
     return path
 
 def pathjoin(path, *args):
-    """Version of os.path.join that assumes every argument after the first is a relative path
+    """ Version of os.path.join that assumes every argument after the first is a relative path
     Args:
         path: The first path part
         args: A list of further paths
     Returns:
-        string of joined paths
-    """
+        string of joined paths """
     if args:
         normed_args = [_relative_path(arg) for arg in args]
         return os.path.join(path, *normed_args)
@@ -111,12 +107,11 @@ def pathjoin(path, *args):
         return os.path.join(path)
 
 def _hash_file(file_path):
-    """Return the md5, sha1, sha256 hash of a file.
+    """ Return the md5, sha1, sha256 hash of a file.
     Args:
         file_path: str path of file to hash
     Returns:
-        list of 3 hex strings.  Empty strings on failure.
-    """
+        list of 3 hex strings.  Empty strings on failure. """
     hashers = [
         md5(),
         sha1(),
@@ -132,16 +127,8 @@ def _hash_file(file_path):
         debugbreak()
         return ['', '', '']
 
-DATETIME_2001 = datetime(2001, 1, 1)
-"""Constant to use for converting timestamps to strings"""
-DATETIME_1970 = datetime(1970, 1, 1)
-"""Constant to use for converting timestamps to strings"""
-DATETIME_1601 = datetime(1601, 1, 1)
-"""Constant to use for converting timestamps to strings"""
-MIN_YEAR = 2004
-
 def _timestamp_errorhandling(func):
-    """Decorator to handle timestamps that are less than MIN_YEAR or after the current date are invalid"""
+    """ Decorator to handle timestamps that are less than MIN_YEAR or after the current date are invalid """
     def wrapper(*args, **kwargs):
         try:
             dt = func(*args, **kwargs)
@@ -154,9 +141,8 @@ def _timestamp_errorhandling(func):
     return wrapper
 
 def _convert_to_local(func):
-    '''UTC to local time conversion
-    source: http://feihonghsu.blogspot.com/2008/02/converting-from-local-time-to-utc.html
-    '''
+    """ UTC to local time conversion
+    source: http://feihonghsu.blogspot.com/2008/02/converting-from-local-time-to-utc.html """
     def wrapper(*args, **kwargs):
         dt = func(*args, **kwargs)
         return datetime.fromtimestamp(calendar.timegm(dt.timetuple()))
@@ -170,7 +156,7 @@ def _seconds_since_2001_to_datetime(seconds):
 @_timestamp_errorhandling
 @_convert_to_local
 def _seconds_since_epoch_to_datetime(seconds):
-    """Converts timestamp to datetime assuming the timestamp is expressed in seconds since epoch"""
+    """ Converts timestamp to datetime assuming the timestamp is expressed in seconds since epoch """
     return DATETIME_1970 + timedelta(seconds=seconds)
 
 @_timestamp_errorhandling
@@ -202,9 +188,6 @@ def _datetime_to_string(dt):
         debugbreak()
         return None
 
-ATTR_KMD_ITEM_WHERE_FROMS = 'com.apple.metadata:kMDItemWhereFroms'
-ATTR_QUARANTINE = 'com.apple.quarantine'
-
 def _get_where_froms(file_path):
     return _get_extended_attr(file_path, ATTR_KMD_ITEM_WHERE_FROMS)
 
@@ -212,14 +195,13 @@ def _get_quarantines(file_path):
     return _get_extended_attr(file_path, ATTR_QUARANTINE)
 
 def _get_extended_attr(file_path, attr):
-    """Get extended attributes from a file, returns an array of strings or None if no value is set.
+    """ Get extended attributes from a file, returns an array of strings or None if no value is set.
     Inspired by https://gist.github.com/dunhamsteve/2889617
     Args:
         file_path: str path of file to examine
         attr: key of the attribute to retrieve
     Returns:
-        a list of strings or None
-    """
+        a list of strings or None """
     try:
         xattr_val = getxattr(file_path, attr)
         if xattr_val.startswith('bplist'):
@@ -241,13 +223,12 @@ def _get_extended_attr(file_path, attr):
     return None
 
 def _get_file_info(file_path, log_xattr=False):
-    """Gather info about a file including hash and dates
+    """ Gather info about a file including hash and dates
     Args:
         file_path: str path of file to hash
         log_xattr: boolean whether to log extended attributes of a file
     Returns:
-        dict with key ['md5', 'sha1', 'sha2', file_path', 'mtime', 'ctime']
-    """
+        dict with key ['md5', 'sha1', 'sha2', file_path', 'mtime', 'ctime'] """
     md5_hash, sha1_hash, sha2_hash = '', '', ''
     atime = ''
     mtime = ''
@@ -291,14 +272,13 @@ def _get_file_info(file_path, log_xattr=False):
     return {}
 
 def _normalize_val(val, key=None):
-    """Transform a value read from SqlLite or a plist into a string
+    """ Transform a value read from SqlLite or a plist into a string
     Special case handling deals with things derived from basestring, buffer, or numbers.Number
     Args:
         val: A value of any type
         key: The key associated with the value.  Will attempt to convert timestamps to a date
         based on the key name
-    :returns: A string
-    """
+    returns: A string """
     # If the key hints this is a timestamp, try to use some popular formats
     if key and any([hint in key.lower() for hint in ['time', 'utc', 'date', 'accessed']]):
         ts = _value_to_datetime(val)
@@ -347,39 +327,38 @@ def _normalize_val(val, key=None):
         return repr(val)
 
 def _decode_error_description(error):
-    """Decodes error description retrieved from the native NSError format.
+    """ Decodes error description retrieved from the native NSError format.
     Args:
-        error (NSError): object representing error in native Objective-C format
-    """
+        error (NSError): object representing error in native Objective-C format """
     cfstring = Foundation.CFErrorCopyDescription(error)
     return cfstring.encode('utf-8', 'ignore')
 
+### CLASSES
 class DictUtils(object):
-    """A set of method for manipulating dictionaries."""
+    """ A set of methods for manipulating dictionaries. """
     @classmethod
     def _link_path_to_chain(cls, path):
-        """Helper method for get_deep
+        """ Helper method for get_deep
         Args:
             path: A str representing a chain of keys separated '.' or an enumerable set of strings
         Returns:
-            an enumerable set of strings
-        """
+            an enumerable set of strings """
         if path == '':
             return []
         elif type(path) in (list, tuple, set):
             return path
         else:
             return path.split('.')
+        
     @classmethod
     def _get_deep_by_chain(cls, x, chain, default=None):
-        """Grab data from a dict using a ['key1', 'key2', 'key3'] chain param to do deep traversal.
+        """ Grab data from a dict using a ['key1', 'key2', 'key3'] chain param to do deep traversal.
         Args:
             x: A dict
             chain: an enumerable set of strings
             default: A value to return if the path can not be found
         Returns:
-            The value of the key or default
-        """
+            The value of the key or default """
         if chain == []:
             return default
         try:
@@ -391,40 +370,40 @@ class DictUtils(object):
         except (KeyError, TypeError, ValueError):
             x = default
         return x
+    
     @classmethod
     def get_deep(cls, x, path='', default=None):
-        """Grab data from a dict using a 'key1.key2.key3' path param to do deep traversal.
+        """ Grab data from a dict using a 'key1.key2.key3' path param to do deep traversal.
         Args:
             x: A dict
             path: A 'deep path' to retrieve in the dict
             default: A value to return if the path can not be found
         Returns:
-            The value of the key or default
-        """
+            The value of the key or default """
         chain = cls._link_path_to_chain(path)
         return cls._get_deep_by_chain(x, chain, default=default)
 
 class Logger(object):
-    """Logging class writes JSON to stdout and stderr
+    """ Logging class writes JSON to stdout and stderr
     Additionally, the Logger allows for "extra" key/value pairs to be set.  These will then
     be tacked onto each line logged.  Use the Logger.Extra context manager to set an "extra".
     .. code-block:: python
         with Logger.Extra(extra_key, val):
-            # Everything logged in this context will have {'extra_key': val} inserted into output
-    """
+            Everything logged in this context will have {'extra_key': val} inserted into output """
     output_file = sys.stdout
     # File to write standard output to
     lines_written = 0
     # Counter of lines of standard output written
+    
     @classmethod
     def set_output_file(cls, output_file):
         cls.output_file = output_file
+    
     @classmethod
     def log_dict(cls, record):
-        """Splats out a JSON blob to stdout.
+        """ Splats out a JSON blob to stdout.
         Args:
-            record: a dict of data
-        """
+            record: a dict of data """
         record.update(Logger.Extra.extras)
         try:
             cls.output_file.write(dumps(record))
@@ -434,40 +413,41 @@ class Logger(object):
         except Exception as e:
             debugbreak()
             cls.log_exception(e)
+            
     @classmethod
     def log_warning(cls, message):
-        """Writes a warning message to JSON output and optionally splats a string to stderr if DEBUG_MODE.
+        """ Writes a warning message to JSON output and optionally splats a string to stderr if DEBUG_MODE.
         Args:
-            message: String with a warning message
-        """
+            message: String with a warning message """
         global DEBUG_MODE
         cls.log_dict({'osxcollector_warn': message})
         if DEBUG_MODE:
             sys.stderr.write('[WARN] ')
             sys.stderr.write(message)
             sys.stderr.write(' - {0}\n'.format(repr(Logger.Extra.extras)))
+            
     @classmethod
     def log_error(cls, message):
-        """Writes a warning message to JSON output and to stderr.
+        """ Writes a warning message to JSON output and to stderr.
         Args:
-            message: String with a warning message
-        """
+            message: String with a warning message """
         cls.log_dict({'osxcollector_error': message})
         sys.stderr.write('[ERROR] ')
         sys.stderr.write(message)
         sys.stderr.write(' - {0}\n'.format(repr(Logger.Extra.extras)))
+        
     @classmethod
     def log_exception(cls, e, message=''):
-        """Splat out an Exception instance as a warning
+        """ Splat out an Exception instance as a warning
         Args:
             e: An instance of an Exception
-            message: a str message to log with the Exception
-        """
+            message: a str message to log with the Exception """
         exc_type, _, exc_traceback = sys.exc_info()
         to_print = '{0} {1} {2} {3}'.format(message, e.message or '', exc_type, extract_tb(exc_traceback))
         cls.log_error(to_print)
+        
     class Extra(object):
-        """A context class for adding additional params to be logged with every line written by Logger"""
+        """ A context class for adding additional params to be logged with every line written by Logger """
         extras = {}
         # Class level dict for storing extras
         def __init__(self, key, val):
@@ -484,10 +464,8 @@ class Logger(object):
         def __exit__(self, type, value, traceback):
             del Logger.Extra.extras[self.key]
 
-PATH_ENVIRONMENT_NAME = "PATH"
-
 class Collector(object):
-    """Examines plists, sqlite dbs, and hashes files to gather info useful for analyzing a malware infection"""
+    """ Examines plists, sqlite dbs, and hashes files to gather info useful for analyzing a malware infection """
     def __init__(self):
         # A list of the names of accounts with admin privileges
         self.admins = []
@@ -496,8 +474,7 @@ class Collector(object):
     def collect(self, section_list=None):
         """The primary public method for collecting data.
         Args:
-            section_list: OPTIONAL A list of strings with names of sections to collect.
-        """
+            section_list: OPTIONAL A list of strings with names of sections to collect. """
         sections = [
             ('version', self._version_string),
             ('system_info', self._collect_system_info),
@@ -528,7 +505,7 @@ class Collector(object):
                     Logger.log_exception(section_e, message='failed section')
 
     def _is_fde_enabled(self):
-        """Gathers the Full Disc Encryption status of the system."""
+        """ Gathers the Full Disc Encryption status of the system. """
         fde_status = os.popen('fdesetup status').read()
         if "On" in fde_status:
             return True
@@ -536,9 +513,8 @@ class Collector(object):
             return False
 
     def _foreach_homedir(func):
-        """A decorator to ensure a method is called for each user's homedir.
-        As a side-effect, this adds the 'osxcollector_username' key to Logger output.
-        """
+        """ A decorator to ensure a method is called for each user's homedir.
+        As a side-effect, this adds the 'osxcollector_username' key to Logger output. """
         
         def wrapper(self, *args, **kwargs):
             for homedir in self.homedirs:
@@ -550,14 +526,13 @@ class Collector(object):
         return wrapper
 
     def _read_plist(self, plist_path, default=None):
-        """Read a plist file and return a dict representing it.
+        """ Read a plist file and return a dict representing it.
         The return should be suitable for JSON serialization.
         Args:
             plist_path: The path to the file to read.
             default: The value to return on error
         Returns:
-            a dict or list. Empty dict on failure.
-        """
+            a dict or list. Empty dict on failure. """
         if not default:
             default = {}
         if not os.path.isfile(plist_path):
@@ -590,12 +565,11 @@ class Collector(object):
         return default
 
     def _log_items_in_plist(self, plist, path, transform=None):
-        """Dive into the dict representation of a plist and log all items under a specific path
+        """ Dive into the dict representation of a plist and log all items under a specific path
         Args:
             plist: A dict representation of a plist.
             path: A str which will be passed to get_deep()
-            transform: An optional method for transforming each item before logging.
-        """
+            transform: An optional method for transforming each item before logging. """
         for item in DictUtils.get_deep(plist, path=path, default=[]):
             try:
                 if transform:
@@ -603,12 +577,12 @@ class Collector(object):
                 Logger.log_dict(item)
             except Exception as log_items_in_plist_e:
                 Logger.log_exception(log_items_in_plist_e)
+                
     def _log_file_info_for_directory(self, dir_path, recurse=False):
-        """Logs file information for every file in a directory.
+        """ Logs file information for every file in a directory.
         Args:
             dir_path: string path to a directory
-            recurse: boolean, whether to recurse into child directories
-        """
+            recurse: boolean, whether to recurse into child directories """
         if not os.path.isdir(dir_path):
             Logger.log_warning('Directory not found {0}'.format(dir_path))
             return
@@ -625,27 +599,27 @@ class Collector(object):
                     Logger.log_dict(file_info)
                 except Exception as log_file_info_for_directory_e:
                     Logger.log_exception(log_file_info_for_directory_e)
+                    
     @_foreach_homedir
     def _log_user_quarantines(self, homedir):
-        """Log the quarantines for a user
+        """ Log the quarantines for a user
         Quarantines is basically the info necessary to show the 'Are you sure you wanna run this?' when
         a user is trying to open a file downloaded from the Internet.  For some more details, checkout the
         Apple Support explanation of Quarantines: http://support.apple.com/kb/HT3662
         Args:
-            homedir: A HomeDir
-        """
+            homedir: A HomeDir """
         # OS X >= 10.7
         db_path = pathjoin(homedir.path, 'Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2')
         if not os.path.isfile(db_path):
             # OS X <= 10.6
             db_path = pathjoin(homedir.path, 'Library/Preferences/com.apple.LaunchServices.QuarantineEvents')
         self._log_sqlite_db(db_path)
+    
     def _log_xprotect(self):
-        """XProtect adds hash-based malware checking to quarantine files.
+        """ XProtect adds hash-based malware checking to quarantine files.
         The plist for XProtect is at: /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/XProtect.plist
         XProtect also add minimum versions for Internet Plugins. That plist is at:
-        /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/XProtect.meta.plist
-        """
+        /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/XProtect.meta.plist """
         xprotect_files = [
             'System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/XProtect.plist',
             'System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/XProtect.meta.plist',
@@ -653,11 +627,12 @@ class Collector(object):
         for file_path in xprotect_files:
             file_info = _get_file_info(pathjoin(ROOT_PATH, file_path))
             Logger.log_dict(file_info)
+            
     def _should_walk(self, sub_dir_path):
         return any([sub_dir_path.endswith(extension) for extension in ['.app', '.kext', '.osax', 'Contents']])
     
     def _log_packages_in_dir(self, dir_path):
-        """Log the packages in a directory"""
+        """ Log the packages in a directory """
         plist_file = 'Info.plist'
         walk = [(sub_dir_path, file_names) for sub_dir_path, _, file_names in os.walk(dir_path) if self._should_walk(sub_dir_path)]
         for sub_dir_path, file_names in walk:
@@ -677,12 +652,11 @@ class Collector(object):
                 Logger.log_dict(file_info)
 
     def _log_startup_items(self, dir_path):
-        """Log the startup_item plist and hash its program argument
+        """ Log the startup_item plist and hash its program argument
         Startup items are launched in the final phase of boot.  See more at:
         https://developer.apple.com/library/mac/documentation/macosx/conceptual/bpsystemstartup/chapters/StartupItems.html
         The 'Provides' element of the plist is an array of services provided by the startup item.
-        _log_startup_items treats each element of 'Provides' as a the name of a file and attempts to hash it.
-        """
+        _log_startup_items treats each element of 'Provides' as a the name of a file and attempts to hash it. """
         if not os.path.isdir(dir_path):
             Logger.log_warning('Directory not found {0}'.format(dir_path))
             return
@@ -695,12 +669,11 @@ class Collector(object):
                 Logger.log_exception(log_startup_items_e)
 
     def _log_launch_agents(self, dir_path):
-        """Log a LaunchAgent plist and hash the program it runs.
+        """ Log a LaunchAgent plist and hash the program it runs.
         The plist for a launch agent is described at:
         https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man5/launchd.plist.5.html
         In addition to hashing the program, _log_launch_agents will attempt to look for suspicious program arguments in
-        the launch agent.  Check the 'suspicious' key in the output to identify suspicious launch agents.
-        """
+        the launch agent.  Check the 'suspicious' key in the output to identify suspicious launch agents. """
         if not os.path.isdir(dir_path):
             Logger.log_warning('Directory not found {0}'.format(dir_path))
             return
@@ -729,23 +702,21 @@ class Collector(object):
 
     @_foreach_homedir
     def _log_user_login_items(self, homedir):
-        """Log the login items for a user
+        """ Log the login items for a user
         Login items are startup items that open automatically when a user logs in.
         They are visible in 'System Preferences'->'Users & Groups'->'Login Items'
         The name of the item is in 'SessionItems.CustomListItems.Name'
-        The application to launch is in 'SessionItems.CustomListItems.Alias' but this binary structure is hard to read.
-        """
+        The application to launch is in 'SessionItems.CustomListItems.Alias' but this binary structure is hard to read. """
         plist_path = pathjoin(homedir.path, 'Library/Preferences/com.apple.loginitems.plist')
         plist = self._read_plist(plist_path)
         self._log_items_in_plist(plist, 'SessionItems.CustomListItems')
 
     def _version_string(self):
-        """Log the current version of this program (osxcollector)"""
+        """ Log the current version of this program (osxcollector) """
         Logger.log_dict({'osxcollector_version': __version__})
 
     def _collect_system_info(self):
-        """Collect basic info about the system and system logs"""
-        # Basic OS info
+        """ Collect basic info about the system and system logs """
         sysname, nodename, release, version, machine = os.uname()
         fde = self._is_fde_enabled()
         record = {
@@ -759,7 +730,7 @@ class Collector(object):
         Logger.log_dict(record)
 
     def _collect_binary_names_in_path(self):
-        """Collect the names of executable binaries in the PATH environment"""
+        """ Collect the names of executable binaries in the PATH environment """
         exe_files = []
 
         def is_exe(fpath):
@@ -775,7 +746,7 @@ class Collector(object):
         Logger.log_dict({"executable_files": exe_files})
 
     def _collect_startup(self):
-        """Log the different LauchAgents and LaunchDaemons"""
+        """ Log the different LauchAgents and LaunchDaemons """
         # http://www.malicious-streams.com/article/Mac_OSX_Startup.pdf
         launch_agents = [
             'System/Library/LaunchAgents',
@@ -805,18 +776,17 @@ class Collector(object):
             self._log_user_login_items()
 
     def _collect_quarantines(self):
-        """Log quarantines and XProtect hash-based malware checking definitions
-        """
+        """ Log quarantines and XProtect hash-based malware checking definitions """
         self._log_user_quarantines()
         self._log_xprotect()
 
     def _collect_full_hash(self):
-        """Hash everything on the drive"""
+        """ Hash everything on the drive """
         self._log_file_info_for_directory(ROOT_PATH)
 
     @_foreach_homedir
     def _collect_downloads(self, homedir):
-        """Hash all users's downloaded files"""
+        """ Hash all users's downloaded files """
         directories_to_hash = [
             ('downloads', 'Downloads'),
             ('email_downloads', 'Library/Mail Downloads'),
@@ -828,10 +798,9 @@ class Collector(object):
                 self._log_file_info_for_directory(dir_path)
 
     def _collect_json_files(self, dir_path):
-        """Collect all JSON files in a directory
+        """ Collect all JSON files in a directory
         Args:
-            dir_path: Absolute path to the directory
-            """
+            dir_path: Absolute path to the directory """
         if not os.path.isdir(dir_path):
             Logger.log_warning('Directory not found {0}'.format(dir_path))
             return
@@ -841,11 +810,10 @@ class Collector(object):
             self._log_json_file(dir_path, file_name)
 
     def _log_json_file(self, dir_path, file_name):
-        """Dump a JSON file to a single log line
+        """ Dump a JSON file to a single log line
         Args:
             dir_path: Absolute path to the directory
-            file_name: File name
-        """
+            file_name: File name """
         try:
             with open(pathjoin(dir_path, file_name), 'r') as fp:
                 file_contents = fp.read()
@@ -857,12 +825,11 @@ class Collector(object):
                 log_json_e, message='failed _log_json_file dir_path[{0}] file_name[{1}]'.format(dir_path, file_name))
 
     def _log_sqlite_table(self, table_name, cursor, ignore_keys):
-        """Dump a SQLite table
+        """ Dump a SQLite table
         Args:
             table_name: The name of the table to dump
             cursor: sqlite3 cursor object
-            ignore_keys: A list of the keys (column names) to ignore when logging the table.
-        """
+            ignore_keys: A list of the keys (column names) to ignore when logging the table. """
         with Logger.Extra('osxcollector_table_name', table_name):
             try:
                 # Grab the whole table
@@ -890,12 +857,11 @@ class Collector(object):
                 self._log_sqlite_table(table_name, cursor, ignore_keys)
 
     def _log_sqlite_db(self, sqlite_db_path, ignore={}):
-        """Dump a SQLite database file as JSON.
+        """ Dump a SQLite database file as JSON.
         Args:
             sqlite_db_path: The path to the SQLite file
             ignore (optional): The dictionary associating table names
-                and keys to ignore when dumping the database
-        """
+                and keys to ignore when dumping the database """
         if not os.path.isfile(sqlite_db_path):
             Logger.log_warning('File not found {0}'.format(sqlite_db_path))
             return
@@ -914,7 +880,7 @@ class Collector(object):
 
     def _log_sqlite_dbs_for_subsections(
             self, sqlite_dbs, profile_path, ignored_sqlite_keys={}):
-        """Dumps SQLite databases for each subsection.
+        """ umps SQLite databases for each subsection.
         Args:
             sqlite_dbs: The list of tuples containing subsection name
                 and related SQLite database filename
@@ -922,8 +888,7 @@ class Collector(object):
                 the SQLite database filenames are relative to
             ignored_sqlite_keys: The dictionary containing the mapping
                 between the subsection, the SQLite table name and
-                the key name, which value should not be dumped
-        """
+                the key name, which value should not be dumped """
         for subsection_name, db_name in sqlite_dbs:
             with Logger.Extra('osxcollector_subsection', subsection_name):
                 ignore = ignored_sqlite_keys.get(subsection_name, {})
@@ -933,7 +898,7 @@ class Collector(object):
     def _log_directories_of_dbs(
             self, directories_of_dbs, profile_path, ignored_sqlite_keys,
             ignore_db_path=lambda sqlite_db_path: False):
-        """Dumps SQLite databases for each subsection.
+        """ Dumps SQLite databases for each subsection.
         Args:
             directories_of_dbs: The list of tuples containing
                 subsection name and related subdirectory for which all
@@ -945,8 +910,7 @@ class Collector(object):
                 the key name, which value should not be dumped
             ignore_db_path (optional): The function which takes
                 the SQLite database path and returns True if
-                the database file should not be dumped
-        """
+                the database file should not be dumped """
         for subsection_name, dir_name in directories_of_dbs:
             with Logger.Extra('osxcollector_subsection', subsection_name):
                 ignore = ignored_sqlite_keys.get(subsection_name, {})
@@ -958,7 +922,7 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_firefox(self, homedir):
-        """Log the different SQLite databases in a Firefox profile"""
+        """ Log the different SQLite databases in a Firefox profile """
         global firefox_ignored_sqlite_keys
         all_profiles_path = pathjoin(homedir.path, 'Library/Application Support/Firefox/Profiles')
         if not os.path.isdir(all_profiles_path):
@@ -987,7 +951,7 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_safari(self, homedir):
-        """Log the different plist and SQLite databases in a Safari profile"""
+        """ Log the different plist and SQLite databases in a Safari profile """
         global safari_ignored_sqlite_keys
         profile_path = pathjoin(homedir.path, 'Library/Safari')
         if not os.path.isdir(profile_path):
@@ -1021,7 +985,7 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_chrome(self, homedir):
-        """Log the different files in a Chrome profile"""
+        """ Log the different files in a Chrome profile """
         global chrome_ignored_sqlite_keys
         chrome_path = pathjoin(homedir.path, 'Library/Application Support/Google/Chrome')
         if not os.path.isdir(chrome_path):
@@ -1055,7 +1019,7 @@ class Collector(object):
                 self._log_json_file(profile_path, 'preferences')
 
     def _collect_kext(self):
-        """Log the Kernel extensions"""
+        """ Log the Kernel extensions """
         kext_paths = [
             'System/Library/Extensions',
             'Library/Extensions'
@@ -1064,7 +1028,7 @@ class Collector(object):
             self._log_packages_in_dir(pathjoin(ROOT_PATH, kext_path))
 
     def _collect_accounts(self):
-        """Log users's accounts"""
+        """ Log users's accounts """
         accounts = [
             ('system_admins', self._collect_accounts_system_admins),
             ('system_users', self._collect_accounts_system_users),
@@ -1076,7 +1040,7 @@ class Collector(object):
                 collector()
 
     def _collect_accounts_system_admins(self):
-        """Log the system admins group db"""
+        """ Log the system admins group db """
         sys_admin_plist_path = pathjoin(ROOT_PATH, 'private/var/db/dslocal/nodes/Default/groups/admin.plist')
         sys_admin_plist = self._read_plist(sys_admin_plist_path)
         for admin in sys_admin_plist.get('groupmembers', []):
@@ -1086,7 +1050,7 @@ class Collector(object):
         Logger.log_dict({'admins': self.admins})
         
     def _collect_accounts_system_users(self):
-        """Log the system users db"""
+        """ Log the system users db """
         for user_name in listdir(pathjoin(ROOT_PATH, 'private/var/db/dslocal/nodes/Default/users')):
             if user_name[0].startswith('.'):
                 continue
@@ -1111,7 +1075,7 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_accounts_recent_items(self, homedir):
-        """Log users' recent items"""
+        """ Log users' recent items """
         recent_items_account_plist_path = pathjoin(homedir.path, 'Library/Preferences/com.apple.recentitems.plist')
         recents_plist = self._read_plist(recent_items_account_plist_path)
         recents = [
@@ -1130,11 +1094,11 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_user_applications(self, homedir):
-        """Hashes installed apps in the user's ~/Applications directory"""
+        """ Hashes installed apps in the user's ~/Applications directory """
         self._log_packages_in_dir(pathjoin(homedir.path, 'Applications'))
 
     def _collect_applications(self):
-        """Hashes installed apps in and gathers install history"""
+        """ Hashes installed apps in and gathers install history """
         with Logger.Extra('osxcollector_subsection', 'applications'):
             # Hash all files in /Applications
             self._log_packages_in_dir(pathjoin(ROOT_PATH, 'Applications'))
@@ -1148,7 +1112,7 @@ class Collector(object):
 
     @_foreach_homedir
     def _collect_mail(self, homedir):
-        """Hashes file in the mail app directories"""
+        """ Hashes file in the mail app directories """
         mail_paths = [
             'Library/Mail',
             'Library/Mail Downloads'
@@ -1158,10 +1122,9 @@ class Collector(object):
 
 class LogFileArchiver(object):
     def archive_logs(self, target_dir_path):
-        """Main method for archiving files
+        """ Main method for archiving files
         Args:
-            target_dir_path: Path the directory files should be archived to
-        """
+            target_dir_path: Path the directory files should be archived to """
         to_archive = [
             ('private/var/log', 'system.'),
             ('Library/Logs', None),
@@ -1182,12 +1145,11 @@ class LogFileArchiver(object):
                     Logger.log_exception(archive_e, message='src[{0}] dst[{1}]'.format(src, dst))
     
     def compress_directory(self, file_name, output_dir_path, target_dir_path):
-        """Compress a directory into a .tar.gz
+        """ Compress a directory into a .tar.gz
         Args:
             file_name: The name of the .tar.gz to file to create.  Do not include the extension.
             output_dir_path: The directory to place the output file in.
-            target_dir_path: The directory to compress
-        """
+            target_dir_path: The directory to compress """
         try:
             # Zip the whole thing up
             shutil.make_archive(file_name, format='gztar', root_dir=output_dir_path, base_dir=target_dir_path)
@@ -1320,6 +1282,7 @@ class kyphosis():
                     with open(os.path.basename(self.someFile) + '.extra_data_end', 'w') as g:
                         g.write(extra_data_end)
 
+### MAIN ###
 def main():
     global DEBUG_MODE
     global ROOT_PATH
