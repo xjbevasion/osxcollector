@@ -16,13 +16,9 @@
 #
 #  Non-fatal errors are only written to stderr when the --debug flag is passed to the script.
 #  They can also be found in the JSON output as lines with a key 'osxcollector_warn'
-#
-import base64
-import calendar
-import os
-import shutil
-import struct
-import sys
+
+### IMPORTS
+import base64, calendar, os, shutil, struct, sys
 from argparse import ArgumentParser
 from collections import namedtuple
 from datetime import datetime
